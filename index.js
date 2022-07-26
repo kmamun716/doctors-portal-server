@@ -7,9 +7,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use('/doctorsRoute', require('./doctorsRoute/doctorsRoute'));
 
 const port = process.env.PORT || 4000;
+
+//external route setup
+app.use('/doctorsRoute', require('./doctorsRoute/doctorsRoute'));
 
 
 
