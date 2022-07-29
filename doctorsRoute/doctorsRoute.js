@@ -1,12 +1,14 @@
 const router = require("express").Router();
 const client = require("../config").client;
 const jwt = require("jsonwebtoken");
+const { ObjectId } = require("mongodb");
 const { accessMiddleWare } = require("../middlewares/userAccessMiddleware");
 
 let db;
 let serviceCollection;
 let bookingCollection;
 let usersCollection;
+let doctorsCollection;
 router.all("*", (req, res, next) => {
   client.connect((err, database) => {
     console.log("database connected");
@@ -15,6 +17,7 @@ router.all("*", (req, res, next) => {
     serviceCollection = db.collection("services");
     bookingCollection = db.collection("booking");
     usersCollection = db.collection("users");
+    doctorsCollection = db.collection("doctors");
     next();
   });
 });
@@ -24,9 +27,22 @@ router.get("/", (req, res) => {
 });
 
 async function run() {
+  //verify admin middleware
+  const verifyAdmin = async (req, res, next) => {
+    const requester = req.user.email;
+    const requesterAccount = await usersCollection.findOne({
+      email: requester,
+    });
+    if (requesterAccount.role === "admin") {
+      next();
+    } else {
+      return res.status(403).send({ message: "Forbidden Access" });
+    }
+  };
+
   router.get("/services", async (req, res) => {
     const query = {};
-    const cursor = serviceCollection.find(query);
+    const cursor = serviceCollection.find(query).project({ name: 1 });
     const services = await cursor.toArray();
     res.send(services);
   });
@@ -56,7 +72,7 @@ async function run() {
       const bookings = await bookingCollection.find(query).toArray();
       return res.send(bookings);
     } else {
-        return res.status(403).send({message: 'Forbidden Access'});
+      return res.status(403).send({ message: "Forbidden Access" });
     }
   });
 
@@ -97,47 +113,76 @@ async function run() {
   });
 
   //make admin
-  router.put("/user/makeAdmin/:email", accessMiddleWare, async (req, res) => {
+  router.put("/user/makeAdmin/:email", accessMiddleWare, verifyAdmin, async (req, res) => {
+      const email = req.params.email;
+      const filter = { email: email };
+      const updatedDoc = {
+        $set: { role: "admin" },
+      };
+      const result = await usersCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    }
+  );
+
+  //remove from admin
+  router.put("/user/removeAdmin/:email", accessMiddleWare, verifyAdmin, async (req, res) => {
     const email = req.params.email;
     const filter = { email: email };
-    const requester = req.user.email;
-    const requesterAccount = await usersCollection.findOne({email: requester});
-    if(requesterAccount.role === 'admin'){
-        const updatedDoc = {
-            $set: {role: 'admin'},
-          };
-          const result = await usersCollection.updateOne(filter, updatedDoc);
-          res.send(result);
-    } else {
-        res.status(403).send({message: 'Forbidded Access'});
-    }    
-  });
+    const updatedDoc = {
+      $set: { role: "user" },
+    };
+    const result = await usersCollection.updateOne(filter, updatedDoc);
+    res.send(result);
+  }
+);
 
   //get all user
-  router.get('/users', accessMiddleWare,async(req, res)=>{
+  router.get("/users", accessMiddleWare, async (req, res) => {
     const query = {};
     const cursor = usersCollection.find(query);
     const result = await cursor.toArray();
-    res.send(result)
-  })
+    res.send(result);
+  });
 
   //check admin
-  router.get('/admin/:email', accessMiddleWare, async(req, res)=>{
+  router.get("/admin/:email", accessMiddleWare, async (req, res) => {
     const email = req.params.email;
     const accessUser = req.user.email;
-    if(email === accessUser){
-        const userDetails = await usersCollection.findOne({email: email});
-        const isAdmin = userDetails.role === 'admin';
-        if(isAdmin){
-            res.send({admin: isAdmin})
-        }else{
-            res.send({message: 'you are not admin'})
-        }
+    if (email === accessUser) {
+      const userDetails = await usersCollection.findOne({ email: email });
+      const isAdmin = userDetails.role === "admin";
+      if (isAdmin) {
+        res.send({ admin: isAdmin });
+      } else {
+        res.send({ message: "you are not admin" });
+      }
     } else {
-        res.status(403).send({message: 'Forbidded Access'});
+      res.status(403).send({ message: "Forbidded Access" });
     }
-  })
+  });
 
+  //add doctor
+  router.post("/addDoctor", accessMiddleWare, verifyAdmin, async (req, res) => {
+    const doctor = req.body;
+    const result = await doctorsCollection.insertOne(doctor);
+    res.send(result);
+  });
+
+  //delete doctor
+  router.delete("/doctor/:id", accessMiddleWare, verifyAdmin, async (req, res) => {
+    const doctorId = req.params.id;
+    const filter = {_id: ObjectId(doctorId)};
+    const result = await doctorsCollection.deleteOne(filter);
+    res.send(result);
+  });
+
+  //load all doctor
+  router.get('/doctors', async(req, res)=>{
+    const query = {};
+    const cursor = doctorsCollection.find(query);
+    const doctors = await cursor.toArray();
+    res.send(doctors)
+  })
 }
 run().catch(console.dir);
 
