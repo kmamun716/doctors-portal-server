@@ -3,6 +3,7 @@ const client = require("../config").client;
 const jwt = require("jsonwebtoken");
 const { ObjectId } = require("mongodb");
 const { accessMiddleWare } = require("../middlewares/userAccessMiddleware");
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 let db;
 let serviceCollection;
@@ -75,6 +76,14 @@ async function run() {
       return res.status(403).send({ message: "Forbidden Access" });
     }
   });
+
+  //get booking for payment
+  router.get('/payment/:id', accessMiddleWare,async(req, res)=>{
+    const id = req.params.id;
+    const query = {_id: ObjectId(id)};
+    const booking = await bookingCollection.findOne(query);
+    res.send(booking);
+  })
 
   //post booking
   router.post("/booking", async (req, res) => {
@@ -182,6 +191,20 @@ async function run() {
     const cursor = doctorsCollection.find(query);
     const doctors = await cursor.toArray();
     res.send(doctors)
+  })
+
+  //payment route
+  router.post('/create-payment-intent', accessMiddleWare, async(req, res)=>{
+    const {price} = req.body;
+    const payment = price * 100;
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: payment,
+      currency: "usd",
+      payment_method_types: [ "card" ]
+    });
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+    });
   })
 }
 run().catch(console.dir);
